@@ -1,1 +1,1 @@
-CrossBilateral/CrossBilateral.glsl
+CrossBilateral/KrigBilateral.glsl
