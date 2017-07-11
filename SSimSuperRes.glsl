@@ -18,10 +18,9 @@
 //!BIND PREKERNEL
 //!SAVE LOWRES
 //!WIDTH NATIVE_CROPPED.w
-//!WHEN PREKERNEL.w POSTKERNEL.w <
+//!WHEN NATIVE_CROPPED.w POSTKERNEL.w <
 //!COMPONENTS 4
-
-// -- Downscaling --
+//!DESC SSSR I Downscaling I
 
 #define factor      ((POSTKERNEL_pt*input_size)[axis])
 
@@ -34,7 +33,7 @@
 
 #define Kb 0.0722
 #define Kr 0.2126
-#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), rgb) )
+#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), pow(rgb, vec3(2.0))) )
 
 vec4 hook() {
     // Calculate bounds
@@ -51,7 +50,7 @@ vec4 hook() {
         float w = Kernel(rel);
 
         vec4 o = textureLod(POSTKERNEL_raw, pos, 0.0);
-        o.w = pow(Luma(o.xyz), 2.0);
+        o.w = Luma(o.xyz);
         avg += w * o;
         W += w;
     }
@@ -67,9 +66,10 @@ vec4 hook() {
 //!SAVE LOWRES
 //!WIDTH NATIVE_CROPPED.w
 //!HEIGHT NATIVE_CROPPED.h
+//!WHEN NATIVE_CROPPED.w POSTKERNEL.w <
 //!COMPONENTS 4
+//!DESC SSSR I Downscaling II
 
-// -- Downscaling --
 #define factor      ((LOWRES_pt*input_size)[axis])
 
 #define axis 1
@@ -81,7 +81,7 @@ vec4 hook() {
 
 #define Kb 0.0722
 #define Kr 0.2126
-#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), rgb) )
+#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), pow(rgb, vec3(2.0))) )
 
 vec4 hook() {
     // Calculate bounds
@@ -102,7 +102,7 @@ vec4 hook() {
     }
     avg /= W;
 
-    return vec4(avg.xyz, max(avg.w - pow(Luma(avg.xyz), 2.0), 0.0));
+    return vec4(avg.xyz, clamp(avg.w - Luma(avg.xyz), 0.0, 1.0));
 }
 
 //!HOOK POSTKERNEL
@@ -112,7 +112,9 @@ vec4 hook() {
 //!SAVE mH
 //!WIDTH LOWRES.w
 //!HEIGHT LOWRES.h
+//!WHEN NATIVE_CROPPED.w POSTKERNEL.w <
 //!COMPONENTS 4
+//!DESC SSSR I calc R
 
 #define locality    4.0
 #define spreadL     0.001
@@ -123,19 +125,12 @@ vec4 hook() {
 #define GetL(x,y)   PREKERNEL_tex(PREKERNEL_pt*(PREKERNEL_pos * LOWRES_size + tex_offset + vec2(x,y))).rgb
 #define GetH(x,y)   LOWRES_texOff(vec2(x,y))
 
-#define Gamma(x)    ( pow(max(x, 0.0), vec3(1.0/2.0)) )
+#define Gamma(x)    ( pow(clamp(x, 0.0, 1.0), vec3(1.0/2.0)) )
 #define Kb 0.0722
 #define Kr 0.2126
-#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), rgb) )
+#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), pow(rgb, vec3(2.0))) )
 
 vec4 hook() {
-    vec3 meanL = vec3(0);
-    for (int X=-1; X<=1; X++)
-    for (int Y=-1; Y<=1; Y++) {
-        meanL += GetL(X,Y) * pow(spreadL, sqr(float(X)) + sqr(float(Y)));
-    }
-    meanL /= (1.0 + 4.0*spreadL + 4.0*spreadL*spreadL);
-
     vec4 meanH = vec4(0);
     for (int X=-1; X<=1; X++)
     for (int Y=-1; Y<=1; Y++) {
@@ -146,7 +141,7 @@ vec4 hook() {
     float varL = 0.0;
     for (int X=-1; X<=1; X++)
     for (int Y=-1; Y<=1; Y++) {
-        varL += sqr(Luma(GetL(X,Y) - meanL)) * pow(spreadL, sqr(float(X)) + sqr(float(Y)));
+        varL += Luma(GetL(X,Y) - GetL(0,0)) * pow(spreadL, sqr(float(X)) + sqr(float(Y)));
     }
     varL /= (1.0 + 4.0*spreadL + 4.0*spreadL*spreadL) - (1.0 + 4.0*spreadL*spreadL + 4.0*spreadL*spreadL*spreadL*spreadL)/(1.0 + 4.0*spreadL + 4.0*spreadL*spreadL);
     varL = varL + sqr(noise);
@@ -154,7 +149,7 @@ vec4 hook() {
     float varH = 0.0;
     for (int X=-1; X<=1; X++)
     for (int Y=-1; Y<=1; Y++) {
-        varH += sqr(Luma(GetH(X,Y).rgb - meanH.rgb)) * pow(spreadH, sqr(float(X)) + sqr(float(Y)));
+        varH += Luma(GetH(X,Y).rgb - meanH.rgb) * pow(spreadH, sqr(float(X)) + sqr(float(Y)));
     }
     varH /= (1.0 + 4.0*spreadH + 4.0*spreadH*spreadH) - (1.0 + 4.0*spreadH*spreadH + 4.0*spreadH*spreadH*spreadH*spreadH)/(1.0 + 4.0*spreadH + 4.0*spreadH*spreadH);
     varH = varH + meanH.w + sqr(noise);
@@ -167,9 +162,8 @@ vec4 hook() {
 //!BIND LOWRES
 //!BIND PREKERNEL
 //!BIND mH
-//!WHEN PREKERNEL.h POSTKERNEL.h <
-
-#define oversharp   0.0
+//!WHEN NATIVE_CROPPED.w POSTKERNEL.w <
+//!DESC SSSR I final pass
 
 // -- Window Size --
 #define taps        3.0
@@ -187,11 +181,11 @@ vec4 hook() {
 #define meanH(x,y)  ( mH_tex(mH_pt*(pos+vec2(x,y)+0.5)) )
 #define Lowres(x,y) ( LOWRES_tex(LOWRES_pt*(pos+vec2(x,y)+0.5)) )
 
-#define Gamma(x)    ( pow(max(x, 0.0), vec3(1.0/2.0)) )
-#define GammaInv(x) ( pow((x), vec3(2.0)) )
+#define Gamma(x)    ( pow(clamp(x, 0.0, 1.0), vec3(1.0/2.0)) )
+#define GammaInv(x) ( pow(clamp(x, 0.0, 1.0), vec3(2.0)) )
 #define Kb 0.0722
 #define Kr 0.2126
-#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), rgb) )
+#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), pow(rgb, vec3(2.0))) )
 
 vec4 hook() {
     vec4 c0 = HOOKED_tex(HOOKED_pos);
@@ -208,11 +202,11 @@ vec4 hook() {
     for (int X = minX; X <= maxX; X++)
     for (int Y = minX; Y <= maxX; Y++)
     {
-        float R = -(1.0 + oversharp) * meanH(X,Y).w;
+        float R = -1.0 * meanH(X,Y).w;
         float Var = Lowres(X,Y).w;
 
         vec2 krnl = Kernel(vec2(X,Y) - offset);
-        float weight = krnl.x * krnl.y / (sqr(Luma(c0.xyz - Lowres(X,Y).xyz)) + Var + sqr(0.5/255.0));
+        float weight = krnl.x * krnl.y / (Luma(c0.xyz - Lowres(X,Y).xyz) + Var + sqr(0.5/255.0));
 
         diff += weight * ((Orig(X,Y).xyz + meanH(X,Y).xyz * R) + (-1.0 - R) * (c0.xyz));
         weightSum += weight;
@@ -229,10 +223,9 @@ vec4 hook() {
 //!BIND PREKERNEL
 //!SAVE LOWRES
 //!WIDTH NATIVE_CROPPED.w
-//!WHEN PREKERNEL.w POSTKERNEL.w <
+//!WHEN NATIVE_CROPPED.w POSTKERNEL.w <
 //!COMPONENTS 4
-
-// -- Downscaling --
+//!DESC SSSR II Downscaling I
 
 #define factor      ((POSTKERNEL_pt*input_size)[axis])
 
@@ -245,7 +238,7 @@ vec4 hook() {
 
 #define Kb 0.0722
 #define Kr 0.2126
-#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), rgb) )
+#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), pow(rgb, vec3(2.0))) )
 
 vec4 hook() {
     // Calculate bounds
@@ -262,7 +255,7 @@ vec4 hook() {
         float w = Kernel(rel);
 
         vec4 o = textureLod(POSTKERNEL_raw, pos, 0.0);
-        o.w = pow(Luma(o.xyz), 2.0);
+        o.w = Luma(o.xyz);
         avg += w * o;
         W += w;
     }
@@ -278,9 +271,10 @@ vec4 hook() {
 //!SAVE LOWRES
 //!WIDTH NATIVE_CROPPED.w
 //!HEIGHT NATIVE_CROPPED.h
+//!WHEN NATIVE_CROPPED.w POSTKERNEL.w <
 //!COMPONENTS 4
+//!DESC SSSR II Downscaling II
 
-// -- Downscaling --
 #define factor      ((LOWRES_pt*input_size)[axis])
 
 #define axis 1
@@ -292,7 +286,7 @@ vec4 hook() {
 
 #define Kb 0.0722
 #define Kr 0.2126
-#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), rgb) )
+#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), pow(rgb, vec3(2.0))) )
 
 vec4 hook() {
     // Calculate bounds
@@ -313,7 +307,7 @@ vec4 hook() {
     }
     avg /= W;
 
-    return vec4(avg.xyz, max(avg.w - pow(Luma(avg.xyz), 2.0), 0.0));
+    return vec4(avg.xyz, clamp(avg.w - Luma(avg.xyz), 0.0, 1.0));
 }
 
 //!HOOK POSTKERNEL
@@ -323,7 +317,9 @@ vec4 hook() {
 //!SAVE mL
 //!WIDTH LOWRES.w
 //!HEIGHT LOWRES.h
+//!WHEN NATIVE_CROPPED.w POSTKERNEL.w <
 //!COMPONENTS 4
+//!DESC SSSR II meanL
 
 #define locality    4.0
 #define spreadL     1.0 / locality
@@ -331,10 +327,10 @@ vec4 hook() {
 #define sqr(x)      pow(x, 2.0)
 #define GetL(x,y)   PREKERNEL_tex(PREKERNEL_pt*(PREKERNEL_pos * LOWRES_size + tex_offset + vec2(x,y))).rgb
 
-#define Gamma(x)    ( pow(max(x, 0.0), vec3(1.0/2.0)) )
+#define Gamma(x)    ( pow(clamp(x, 0.0, 1.0), vec3(1.0/2.0)) )
 #define Kb 0.0722
 #define Kr 0.2126
-#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), rgb) )
+#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), pow(rgb, vec3(2.0))) )
 
 vec4 hook() {
     vec3 meanL = vec3(0);
@@ -347,7 +343,7 @@ vec4 hook() {
     float varL = 0.0;
     for (int X=-1; X<=1; X++)
     for (int Y=-1; Y<=1; Y++) {
-        varL += sqr(Luma(GetL(X,Y) - meanL)) * pow(spreadL, sqr(float(X)) + sqr(float(Y)));
+        varL += Luma(GetL(X,Y) - meanL) * pow(spreadL, sqr(float(X)) + sqr(float(Y)));
     }
     varL /= (1.0 + 4.0*spreadL + 4.0*spreadL*spreadL) - (1.0 + 4.0*spreadL*spreadL + 4.0*spreadL*spreadL*spreadL*spreadL)/(1.0 + 4.0*spreadL + 4.0*spreadL*spreadL);
 
@@ -361,7 +357,9 @@ vec4 hook() {
 //!SAVE mH
 //!WIDTH LOWRES.w
 //!HEIGHT LOWRES.h
+//!WHEN NATIVE_CROPPED.w POSTKERNEL.w <
 //!COMPONENTS 4
+//!DESC SSSR II meanH & R
 
 #define locality    4.0
 #define spreadH     1.0 / locality
@@ -370,10 +368,10 @@ vec4 hook() {
 #define sqr(x)      pow(x, 2.0)
 #define GetH(x,y)   LOWRES_texOff(vec2(x,y))
 
-#define Gamma(x)    ( pow(max(x, 0.0), vec3(1.0/2.0)) )
+#define Gamma(x)    ( pow(clamp(x, 0.0, 1.0), vec3(1.0/2.0)) )
 #define Kb 0.0722
 #define Kr 0.2126
-#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), rgb) )
+#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), pow(rgb, vec3(2.0))) )
 
 vec4 hook() {
     vec4 meanH = vec4(0);
@@ -386,14 +384,14 @@ vec4 hook() {
     float varH = 0.0;
     for (int X=-1; X<=1; X++)
     for (int Y=-1; Y<=1; Y++) {
-        varH += sqr(Luma(GetH(X,Y).rgb - meanH.rgb)) * pow(spreadH, sqr(float(X)) + sqr(float(Y)));
+        varH += Luma(GetH(X,Y).rgb - meanH.rgb) * pow(spreadH, sqr(float(X)) + sqr(float(Y)));
     }
     varH /= (1.0 + 4.0*spreadH + 4.0*spreadH*spreadH) - (1.0 + 4.0*spreadH*spreadH + 4.0*spreadH*spreadH*spreadH*spreadH)/(1.0 + 4.0*spreadH + 4.0*spreadH*spreadH);
     varH = varH + meanH.w + sqr(noise);
 
     float varL = mL_texOff(0).w + sqr(noise);
 
-    return vec4((meanH.rgb), sqrt(varL/varH));
+    return vec4((meanH.rgb), 1.0 / (sqrt(varL/varH) + 1.0));
 }
 
 //!HOOK POSTKERNEL
@@ -401,6 +399,8 @@ vec4 hook() {
 //!BIND LOWRES
 //!BIND mL
 //!BIND mH
+//!WHEN NATIVE_CROPPED.w POSTKERNEL.w <
+//!DESC SSSR II final pass
 
 #define oversharp   0.0
 
@@ -420,11 +420,11 @@ vec4 hook() {
 #define meanH(x,y)  ( mH_tex(mH_pt*(pos+vec2(x,y)+0.5)) )
 #define Lowres(x,y) ( LOWRES_tex(LOWRES_pt*(pos+vec2(x,y)+0.5)) )
 
-#define Gamma(x)    ( pow(max(x, 0.0), vec3(1.0/2.0)) )
-#define GammaInv(x) ( pow((x), vec3(2.0)) )
+#define Gamma(x)    ( pow(clamp(x, 0.0, 1.0), vec3(1.0/2.0)) )
+#define GammaInv(x) ( pow(clamp(x, 0.0, 1.0), vec3(2.0)) )
 #define Kb 0.0722
 #define Kr 0.2126
-#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), rgb) )
+#define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), pow(rgb, vec3(2.0))) )
 
 vec4 hook() {
     vec4 c0 = HOOKED_tex(HOOKED_pos);
@@ -441,11 +441,11 @@ vec4 hook() {
     for (int X = minX; X <= maxX; X++)
     for (int Y = minX; Y <= maxX; Y++)
     {
-        float R = -(1.0 + oversharp) * meanH(X,Y).w;
+        float R = (-1.0 - oversharp) / meanH(X,Y).w + (1.0 + oversharp);
         float Var = Lowres(X,Y).w;
 
         vec2 krnl = Kernel(vec2(X,Y) - offset);
-        float weight = krnl.x * krnl.y / (sqr(Luma(c0.xyz - Lowres(X,Y).xyz)) + Var + sqr(0.5/255.0));
+        float weight = krnl.x * krnl.y / (Luma(c0.xyz - Lowres(X,Y).xyz) + Var + sqr(0.5/255.0));
 
         diff += weight * ((meanL(X,Y).xyz + meanH(X,Y).xyz * R) + (-1.0 - R) * (c0.xyz));
         weightSum += weight;
