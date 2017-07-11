@@ -4,6 +4,13 @@ Display statistics for the currently played file in mpv.
 
 ![Default](https://cloud.githubusercontent.com/assets/540920/16775632/85da9aa6-489c-11e6-8333-176755e64892.jpg)
 
+Requirements
+============
+
+The latest version of this script requires mpv version **0.26.0** or above (or at least [newer than this 0.25 commit](https://github.com/mpv-player/mpv/commit/6a12b1fdc3c5c70fed15734c02f65005db2835cd)).  
+For older mpv versions please go to [Releases](https://github.com/Argon-/mpv-stats/releases).
+The oldest supported version of mpv is 0.9.3.
+
 
 Usage
 =====
@@ -12,13 +19,22 @@ to autoload the script.
 
 The script is binding itself to `i` and `I` (however, not overriding your own
 bindings) and can therefore be invoked by pressing these keys.
-`i` will show the stats once while `I` is toggling them.
+`i` will show the stats once while `I` will toggle them.
 
-You can set different bindings either by customizing this script (see below) or
-by using the `script_binding` input command (in `input.conf`), e.g.:
+While the stats are visible on screen, you can use numeric keys (1, 2, 3, ...)
+to switch between "pages" of stats. So far, the following pages are defined:
 
-    e script-binding stats/display_stats
-    E script-binding stats/display_stats_toggle
+1. stats (as usual)
+2. frame timings
+
+There will be more pages in the future.
+Also, expect some layout changes of current pages in the near future.
+
+You can set different bindings either by [customizing](#customization) this script
+or by using the `script_binding` input command (in `input.conf`), e.g.:
+
+    e script-binding stats/display-stats
+    E script-binding stats/display-stats-toggle
 
 By default *Source Sans Pro* is used as font.
 [You can download it here](https://github.com/adobe-fonts/source-sans-pro).
@@ -27,28 +43,17 @@ By default *Source Sans Pro* is used as font.
 F.A.Q.
 ======
 
-## Requirements
-
-This script requires mpv version **18.0** or above.  
-An older version (see [Releases](https://github.com/Argon-/mpv-stats/releases))
-can be used with a minimum required mpv version of 0.9.3.
-
-There are no further/external dependencies.
-
-## How to get graphs?
+### How to get graphs?
 
 Graphs are enabled by default.
-Please note that they are only shown when stats are toggled and that only the
-`opengl` VO is exposing frame timing data.
+Due to their size, graphs for `Frame Timings` can only be shown on their dedicated page (2).
+For `VSync Ratio` and `VSync Jitter` they are only shown when stats are toggled (page 1)
+because they need to be recorded.
+Please note that only the `opengl` VO is exposing frame timing data.
 
 Turn graphs off with `plot_perfdata=no`, `plot_vsync_ratio=no` and `plot_vsync_jitter=no` (see [Customization](#customization)).
 
-## Can I get a sum of all three timing values?
-
-Yes, use `print_perfdata_total=yes` to add an additional line showing the values
-summed up (see [Customization](#customization)).
-
-## Why are my frame timing values colored?
+### Why are my frame timing values colored?
 
 **Red**: your hardware needs more time to render/present/upload a frame than available.  
 **Yellow**: your hardware needs more than 85% of the available time.
@@ -69,17 +74,12 @@ just a very general indicator.
 Turn it off by setting `timing_warning=no` (see [Customization](#customization)).  
 Use `timing_warning_th=0.85` to set a factor determining when to warn (yellow).
 
-## The graph's position is jumping
+### The graph's position is jumping
 
 Please use a font with monospaced digits.
 The default font does meet this requirement. Either download it (see [Usage](#usage))
 or set your own with `font_mono` (see [Customization](#customization)).  
 Note that `font` does not need to be a monospaced font.
-
-## Why does the layout change when showing graphs?
-
-Long story short: there can't be text behind the graph drawings.
-[(Why)](https://github.com/libass/libass/issues/230)
 
 
 Customization
