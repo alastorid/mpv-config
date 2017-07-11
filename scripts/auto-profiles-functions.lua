@@ -1,4 +1,3 @@
-
 local utils = require 'mp.utils'
 local msg = require 'mp.msg'
 
@@ -12,7 +11,7 @@ local function exec(process)
 end
 
 
-local loc = exec({"bash", "-c", 'source "$HOME"/local/shell/location-detection && is-desktop'})
+local loc = exec({"bash", "-c", '/usr/sbin/system_profiler SPHardwareDataType | grep "Model Identifier" | grep "Book"'})
 if loc.error then
     msg.error("location detection failed")
     loc.status = 255
@@ -20,13 +19,13 @@ end
 
 
 function is_desktop()
-    --local loc = exec({"bash", "-c", 'source "$HOME"/local/shell/location-detection && is-desktop'})
-    return loc.status == 0
+    local loc = exec({"bash", "-c", '/usr/sbin/system_profiler SPHardwareDataType | grep "Model Identifier" | grep "Book"'})
+    return loc.status == 1
 end
 
 function is_laptop()
-    --local loc = exec({"bash", "-c", 'source "$HOME"/local/shell/location-detection && is-desktop'})
-    return loc.status == 1
+    local loc = exec({"bash", "-c", '/usr/sbin/system_profiler SPHardwareDataType | grep "Model Identifier" | grep "Book"'})
+    return loc.status == 0
 end
 
 function on_battery()
