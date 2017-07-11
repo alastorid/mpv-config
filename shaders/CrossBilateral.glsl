@@ -1,1 +1,0 @@
-CrossBilateral/KrigBilateral.glsl
