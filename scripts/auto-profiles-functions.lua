@@ -1,3 +1,4 @@
+
 local utils = require 'mp.utils'
 local msg = require 'mp.msg'
 
@@ -11,7 +12,8 @@ local function exec(process)
 end
 
 
-local loc = exec({"bash", "-c", '/usr/sbin/system_profiler SPHardwareDataType | grep "Model Identifier" | grep "Book"'})
+-- location (assumed to be immutable)
+local loc = exec({"bash", "-c", 'source "$HOME"/local/shell/location-detection && is-desktop'})
 if loc.error then
     msg.error("location detection failed")
     loc.status = 255
@@ -19,13 +21,13 @@ end
 
 
 function is_desktop()
-    local loc = exec({"bash", "-c", '/usr/sbin/system_profiler SPHardwareDataType | grep "Model Identifier" | grep "Book"'})
-    return loc.status == 1
+    --local loc = exec({"bash", "-c", 'source "$HOME"/local/shell/location-detection && is-desktop'})
+    return loc.status == 0
 end
 
 function is_laptop()
-    local loc = exec({"bash", "-c", '/usr/sbin/system_profiler SPHardwareDataType | grep "Model Identifier" | grep "Book"'})
-    return loc.status == 0
+    --local loc = exec({"bash", "-c", 'source "$HOME"/local/shell/location-detection && is-desktop'})
+    return loc.status == 1
 end
 
 function on_battery()
@@ -33,7 +35,7 @@ function on_battery()
     return bat.stdout == "No adapter attached.\n"
 end
 
-function desktop_res_height()
+function display_res_height()
     local sp_ret = exec({"/usr/local/bin/resolution", "unscaled-height"})
     if sp_ret.error then
         sp_ret.stdout = math.huge
@@ -41,10 +43,18 @@ function desktop_res_height()
     return to_number(sp_ret.stdout)
 end
 
-function desktop_res_width()
+function display_res_width()
     local sp_ret = exec({"/usr/local/bin/resolution", "unscaled-width"})
     if sp_ret.error then
         sp_ret.stdout = math.huge
+    end
+    return to_number(sp_ret.stdout)
+end
+
+function display_scale_factor()
+    local sp_ret = exec({"/usr/local/bin/resolution", "scale"})
+    if sp_ret.error then
+        sp_ret.stdout = 1.0
     end
     return to_number(sp_ret.stdout)
 end
