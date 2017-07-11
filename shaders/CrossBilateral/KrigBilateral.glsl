@@ -13,15 +13,14 @@
 // You should have received a copy of the GNU Lesser General Public
 // License along with this library.
 
-
 //!HOOK CHROMA
 //!BIND HOOKED
 //!BIND LUMA
 //!SAVE LOWRES_Y
 //!HEIGHT LUMA.h
 //!WHEN CHROMA.w LUMA.w <
+//!DESC KrigBilateral Downscaling Y pass 1
 
-// -- Downscaling --
 #define offset    (-vec2(0.0, 0.0)*LUMA_size*CHROMA_pt)
 
 #define factor    ((LUMA_pt*CHROMA_size.x)[axis])
@@ -59,8 +58,8 @@ vec4 hook() {
 //!BIND LOWRES_Y
 //!SAVE LOWRES_Y
 //!WHEN CHROMA.h LUMA.h <
+//!DESC KrigBilateral Downscaling Y pass 2
 
-// -- Downscaling --
 #define offset    (-vec2(0.0, 0.0)*LOWRES_Y_size*CHROMA_pt)
 
 #define factor    ((LOWRES_Y_pt*CHROMA_size)[axis])
@@ -88,7 +87,6 @@ vec4 hook() {
     }
     avg /= W;
 
-    avg.y = avg.y - avg.x*avg.x;
     return avg;
 }
 
@@ -98,8 +96,7 @@ vec4 hook() {
 //!BIND LOWRES_Y
 //!WIDTH LUMA.w
 //!HEIGHT LUMA.h
-
-// -- KrigBilateral --
+//!DESC KrigBilateral Upscaling UV
 
 // -- Convenience --
 #define sqr(x)   dot(x,x)
@@ -108,7 +105,7 @@ vec4 hook() {
 #define chromaOffset vec2(0.0, 0.0)
 
 // -- Window Size --
-#define taps 2
+#define taps 3
 #define even (float(taps) - 2.0 * floor(float(taps) / 2.0) == 0.0)
 #define minX int(1.0-ceil(float(taps)/2.0))
 #define maxX int(floor(float(taps)/2.0))
@@ -116,7 +113,7 @@ vec4 hook() {
 #define Kernel(x) (cos(acos(-1.0)*(x)/float(taps))) // Hann kernel
 
 // -- Input processing --
-#define GetY(x,y)  LOWRES_Y_tex(LOWRES_Y_pt*(pos+vec2(x,y)+vec2(0.5))).xy
+#define GetY(x,y)  LOWRES_Y_tex(LOWRES_Y_pt*(pos+vec2(x,y)+vec2(0.5)))
 #define GetUV(x,y) CHROMA_tex(CHROMA_pt*(pos+vec2(x,y)+vec2(0.5))).xy
 
 #define N (taps*taps - 1)
@@ -125,8 +122,22 @@ vec4 hook() {
 
 //#define C(i,j) (1.0 / (1.0 + 0.5*(sqr(X[i].x - X[j].x)/localVar + sqr((coords[i] - coords[j])/radius))) + 0.25 * (X[i].x - y) * (X[j].x - y) / localVar)
 //#define c(i)   (1.0 / (1.0 + 0.5*(sqr(X[i].x - y)/localVar + sqr((coords[i] - offset)/radius))))
-#define C(i,j) (inversesqrt(1.0 + (X[i].y + X[j].y)/localVar) * exp(-0.5*(sqr(X[i].x - X[j].x)/(localVar + X[i].y + X[j].y) + sqr((coords[i] - coords[j])/radius))) + 0.25 * (X[i].x - y) * (X[j].x - y) / localVar)
-#define c(i) (inversesqrt(1.0 + X[i].y/localVar) * exp(-0.5*(sqr(X[i].x - y)/(localVar + X[i].y) + sqr((coords[i] - offset)/radius))))
+#define C(i,j) (inversesqrt(1.0 + (X[i].y + X[j].y)/localVar) * exp(-0.5*radius*(sqr(X[i].x - X[j].x)/(localVar + X[i].y + X[j].y) + sqr((coords[i] - coords[j])/radius))))
+#define c(i)   (inversesqrt(1.0 + X[i].y/localVar) * exp(-0.5*radius*(sqr(X[i].x - y)/(localVar + X[i].y) + sqr((coords[i] - offset)/radius))))
+
+#define f1(i) b[i] = c(i) - c(N) - ( C(i,N) - C(N,N) ); \
+              for (int j=i; j<N; j++){ M(i, j) = C(i,j) - C(j,N) - ( C(i,N) - C(N,N) ); }
+
+#define f2(i) for (int j=i+1; j<N; j++){ b[j] -= b[i] * M(j, i) / M(i, i); \
+              for (int k=j; k<N; k++) M(j, k) -= M(i, k) * M(j, i) / M(i, i); }
+
+#define f3(i) for (int j=N-(i); j<N; j++){ b[N-1-(i)] -= M(N-1-(i), j) * b[j]; } \
+              b[N-1-(i)] /= M(N-1-(i), N-1-(i)); interp += b[N-1-(i)] * (X[N-1-(i)] - X[N]);
+
+#define I2(f, n) f(n) f(n+1)
+#define I3(f, n) I2(f, n) f(n+2)
+#define I4(f, n) I2(f, n) I2(f, n+2)
+#define I8(f, n) I4(f, n) I4(f, n+4)
 
 vec4 hook() {
     float y = LUMA_tex(LUMA_pos).x;
@@ -143,11 +154,11 @@ vec4 hook() {
     for (int yy = minX; yy <= maxX; yy++)
         if (!(xx == 0 && yy == 0)) {
             coords[i] = vec2(xx, yy);
-            X[i++] = vec4(GetY(xx, yy), GetUV(xx, yy));
+            X[i++] = vec4(GetY(xx, yy).x, GetY(xx,yy).y - GetY(xx,yy).x*GetY(xx,yy).x, GetUV(xx, yy));
         }
 
     coords[N] = vec2(0, 0);
-    X[N] = vec4(GetY(0, 0), GetUV(0, 0));
+    X[N] = vec4(GetY(0, 0).x, GetY(0, 0).y - GetY(0, 0).x*GetY(0, 0).x, GetUV(0, 0));
 
     vec4 total = vec4(0);
     for (int i=0; i<N+1; i++) {
@@ -160,29 +171,17 @@ vec4 hook() {
 
     float Mx[N*(N+1)/2];
     float b[N];
-
-    for (int i=0; i<N; i++) {
-    	b[i] = c(i) - c(N) - ( C(i,N) - C(N,N) ); 
-        for (int j=i; j<N; j++) M(i, j)  = C(i,j) - C(j,N) - ( C(i,N) - C(N,N) );
-    }
-
-    for (int j=1; j<N; j++) {
-        b[j] -= b[0] * M(j, 0) / M(0, 0); 
-        for (int k=j; k<N; k++) M(j, k) -= M(0, k) * M(j, 0) / M(0, 0);
-    }
-    for (int j=2; j<N; j++) {
-        b[j] -= b[1] * M(j, 1) / M(1, 1); 
-        for (int k=j; k<N; k++) M(j, k) -= M(1, k) * M(j, 1) / M(1, 1);
-    }
-
     vec4 interp = X[N];
-    for (int i=N-1; i>=0; i--) {
-        for (int j=i+1; j<N; j++) {
-            b[i] -= M(i, j) * b[j];
-        }
-        b[i] /= M(i, i);
-        interp += b[i] * (X[i] - X[N]);
-    }
+
+    #if taps == 2
+    I3(f1, 0)
+    I2(f2, 0)
+    I3(f3, 0)
+    #else
+    I8(f1, 0)
+    I8(f2, 0)
+    I8(f3, 0)
+    #endif
 
     return interp.zwxx;
 }
