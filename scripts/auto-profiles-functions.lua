@@ -13,25 +13,25 @@ end
 
 
 -- location (assumed to be immutable)
-local loc = exec({"bash", "-c", 'source "$HOME"/local/shell/location-detection && is-desktop'})
-if loc.error then
-    msg.error("location detection failed")
-    loc.status = 255
-end
+-- local loc = exec({"bash", "-c", 'source "$HOME"/local/shell/location-detection && is-desktop'})
+--if loc.error then
+--    msg.error("location detection failed")
+--    loc.status = 255
+--end
 
 
 function is_desktop()
     --local loc = exec({"bash", "-c", 'source "$HOME"/local/shell/location-detection && is-desktop'})
-    return loc.status == 0
+    return false
 end
 
 function is_laptop()
     --local loc = exec({"bash", "-c", 'source "$HOME"/local/shell/location-detection && is-desktop'})
-    return loc.status == 1
+    return true
 end
 
 function on_battery()
-    local bat = exec({"/usr/bin/pmset", "-g", "ac"})
+    local bat = exec({"/usr/bin/on_ac_power"})
     return bat.stdout == "No adapter attached.\n"
 end
 
